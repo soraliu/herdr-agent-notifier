@@ -1,11 +1,11 @@
-// Strip pane: persistent list of agents waiting for you (done/blocked).
-// Arrow keys / 1-9 select, Enter focuses the pane, d dismisses one, D clears
-// all, q quits (opens again from the next event). Polls the state file.
+// Floating list (popup pane) of agents waiting for you (done/blocked).
+// Toggled with option+o (plugin action "toggle"). Arrow keys / 1-9 select,
+// Enter focuses the target pane and closes this popup asynchronously,
+// d dismisses one, D clears all, q/Esc closes. Polls the state file.
 "use strict";
-const fs = require("fs");
-const { STATE_FILE, readState, mutateState, rpc } = require("../hooks/lib");
+const { readState, mutateState, rpc } = require("../hooks/lib");
 
-// Minimal ANSI rendering, no dependencies: cursor off, alt-screen off.
+// Minimal ANSI rendering, no dependencies.
 const ESC = "\x1b[";
 const HIDE_CURSOR = ESC + "?25l";
 const SHOW_CURSOR = "\x1b[?25h";
@@ -25,7 +25,7 @@ function formatTime(iso) {
 
 function render(state) {
   const lines = [];
-  lines.push("\x1b[1magent-notifier\x1b[22m \x1b[2m(done/blocked panes · Enter 跳转 · d 清除 · D 清空 · q 退出)\x1b[22m");
+  lines.push("\x1b[1magent-notifier\x1b[22m \x1b[2m(Enter 跳转 · d 清除 · D 清空 · q 关闭)\x1b[22m");
   const items = state.notifications || [];
   if (!items.length) {
     lines.push("\x1b[2m(no pending agents)\x1b[22m");
@@ -41,23 +41,27 @@ function render(state) {
   process.stdout.write(CLEAR + lines.join("\r\n") + "\r\n");
 }
 
-function focusSelected(item) {
-  if (!item) return;
-  rpc("pane.focus", { pane_id: item.pane_id })
-    .then((res) => {
-      if (res && res.error) process.stderr.write(`pane.focus error: ${JSON.stringify(res.error)}\n`);
-    })
-    .catch((err) => process.stderr.write(`pane.focus failed: ${err.message}\n`));
-}
-
+// Jump-and-close: focus first, then fire-and-forget popup.close. Closing is
+// async so the jump (pane.focus) is never delayed by popup teardown.
 function jumpTo(items, index) {
   const item = items[index];
   if (!item) return;
   selected = index;
-  focusSelected(item);
-  mutateState((s) => {
-    s.notifications = s.notifications.filter((n) => n.pane_id !== item.pane_id);
-  });
+  rpc("pane.focus", { pane_id: item.pane_id })
+    .then((res) => {
+      if (res && res.error) {
+        process.stderr.write(`pane.focus error: ${JSON.stringify(res.error)}\n`);
+        return;
+      }
+      // Focus succeeded — remove the entry and close this popup (async, no await).
+      mutateState((s) => {
+        s.notifications = s.notifications.filter((n) => n.pane_id !== item.pane_id);
+      });
+      rpc("popup.close", {}, 3000).catch((err) => {
+        process.stderr.write(`popup.close failed: ${err.message}\n`);
+      });
+    })
+    .catch((err) => process.stderr.write(`pane.focus failed: ${err.message}\n`));
 }
 
 function main() {
@@ -93,7 +97,7 @@ function main() {
       // d
       const item = items[selected];
       mutateState((s) => {
-        s.notifications = s.notifications.filter((n) => n !== item);
+        s.notifications = s.notifications.filter((n) => n.pane_id !== item.pane_id);
       });
     }
     if (lastRaw === "44") {
