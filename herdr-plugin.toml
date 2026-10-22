@@ -1,6 +1,6 @@
 id = "soraliu.agent-notifier"
 name = "Agent Notifier"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.0"
 description = "Persistent agent done/blocked list that never times out; jump to the pane from the strip"
 platforms = ["linux", "macos"]

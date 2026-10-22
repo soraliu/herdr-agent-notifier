@@ -54,14 +54,14 @@ function withLock(fn) {
       try {
         return fn();
       } finally {
-        fs.rmdirSync(LOCK_DIR, { recursive: true });
+        fs.rmSync(LOCK_DIR, { recursive: true, force: true });
       }
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
       try {
         const stat = fs.statSync(LOCK_DIR);
         if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
-          fs.rmdirSync(LOCK_DIR, { recursive: true });
+          fs.rmSync(LOCK_DIR, { recursive: true, force: true });
           continue; // retry immediately after stealing the stale lock
         }
       } catch (_statErr) {
@@ -136,11 +136,42 @@ function findPaneId(value) {
   return null;
 }
 
+// Async lock variant for operations that await RPCs while holding the lock.
+// Same LOCK_DIR as the sync path, so hook mutations serialize with us.
+async function withLockAsync(fn) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.mkdirSync(LOCK_DIR);
+      try {
+        return await fn();
+      } finally {
+        fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+      }
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      try {
+        const stat = fs.statSync(LOCK_DIR);
+        if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+          fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+          continue;
+        }
+      } catch (_statErr) {
+        continue;
+      }
+      if (attempt > 600) throw new Error("state lock timeout");
+      await new Promise((resolve) => setTimeout(resolve, 5 + Math.floor(Math.random() * 10)));
+    }
+  }
+}
+
 module.exports = {
   STATE_DIR,
   STATE_FILE,
   readState,
+  writeState,
   mutateState,
   rpc,
   findPaneId,
+  withLockAsync,
 };

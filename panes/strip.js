@@ -50,23 +50,6 @@ function focusSelected(item) {
     .catch((err) => process.stderr.write(`pane.focus failed: ${err.message}\n`));
 }
 
-async function openStrip() {
-  // Open (or locate) our split pane, focus:false so the user stays put.
-  try {
-    const res = await rpc("plugin.pane.open", {
-      plugin_id: "soraliu.agent-notifier",
-      entrypoint: "strip",
-      placement: "split",
-      direction: "down",
-      focus: false,
-    });
-    const paneId = require("../hooks/lib").findPaneId(res);
-    if (paneId) mutateState((state) => void (state.strip_pane_id = paneId));
-  } catch (err) {
-    process.stderr.write(`open strip failed: ${err.message}\n`);
-  }
-}
-
 function jumpTo(items, index) {
   const item = items[index];
   if (!item) return;
