@@ -64,8 +64,12 @@ function main() {
   process.stdout.write(HIDE_CURSOR);
   process.on("exit", () => process.stdout.write(SHOW_CURSOR));
 
+  // herdr spawns plugin panes through volta-shim; stdin may not be a TTY there.
+  // setRawMode is optional: without it we lose keyboard interaction but keep
+  // rendering + polling. Crash would kill the pane seconds after open.
+  const interactive = typeof process.stdin.setRawMode === "function";
   let lastRaw = "";
-  process.stdin.setRawMode(true);
+  if (interactive) process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.on("data", (buf) => {
     lastRaw = buf.toString("hex");
