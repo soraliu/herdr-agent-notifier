@@ -80,6 +80,14 @@ function main() {
     const state = readState();
     const items = state.notifications || [];
     if (lastRaw === "03") process.exit(0); // ctrl+c
+    // option+o / alt+o: the popup owns all keyboard input while open, so the
+    // herdr keybinding cannot fire. Handle the toggle-off here ourselves.
+    // Terminals send Alt+<key> as ESC-prefixed ("1b6f" for alt+o); some macOS
+    // configs send the composed character instead, so match both.
+    if (lastRaw === "1b6f") {
+      rpc("popup.close", {}, 3000).catch(() => {});
+      return;
+    }
     if (lastRaw === "71" || lastRaw === "1b") process.exit(0); // q / esc
     if (lastRaw === "1b5b41" && items.length) selected = (selected - 1 + items.length) % items.length; // up
     if (lastRaw === "1b5b42" && items.length) selected = (selected + 1) % items.length; // down

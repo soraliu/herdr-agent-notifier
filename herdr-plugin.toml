@@ -1,6 +1,6 @@
 id = "soraliu.agent-notifier"
 name = "Agent Notifier"
-version = "0.3.0"
+version = "0.4.0"
 min_herdr_version = "0.9.0"
 description = "Persistent agent done/blocked list; option+o toggles a floating list, Enter jumps to the pane"
 platforms = ["linux", "macos"]
@@ -9,9 +9,13 @@ platforms = ["linux", "macos"]
 on = "pane.agent_status_changed"
 command = ["node", "hooks/on-agent-status.js"]
 
+
+[[events]]
+on = "pane.exited"
+command = ["node", "hooks/on-agent-status.js"]
+
 [[actions]]
 id = "toggle"
-title = "Toggle agent notification list"
 contexts = ["global"]
 command = ["node", "hooks/toggle.js"]
 

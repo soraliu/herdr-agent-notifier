@@ -18,13 +18,17 @@ const STATE_FILE = path.join(STATE_DIR, "notifications.json");
 const MAX_NOTIFICATIONS = 20;
 
 function emptyState() {
-  return { strip_pane_id: null, seq: 0, notifications: [] };
+  return { strip_pane_id: null, seq: 0, notifications: [], working: [] };
 }
 
 function readState() {
   try {
     const parsed = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    if (parsed && Array.isArray(parsed.notifications)) return parsed;
+    if (parsed && Array.isArray(parsed.notifications)) {
+      // migrate older states that predate the working set
+      if (!Array.isArray(parsed.working)) parsed.working = [];
+      return parsed;
+    }
   } catch (_err) {
     // missing or corrupt -> fresh state
   }
