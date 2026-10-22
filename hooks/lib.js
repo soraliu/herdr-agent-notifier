@@ -4,7 +4,15 @@ const fs = require("fs");
 const path = require("path");
 const net = require("net");
 
-const STATE_DIR = process.env.HERDR_PLUGIN_STATE_DIR || "/tmp/herdr-agent-notifier";
+const os = require("os");
+const STATE_DIR =
+  process.env.HERDR_PLUGIN_STATE_DIR ||
+  path.join(
+    process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"),
+    "herdr",
+    "plugins",
+    "soraliu.agent-notifier"
+  );
 const STATE_FILE = path.join(STATE_DIR, "notifications.json");
 
 const MAX_NOTIFICATIONS = 20;
@@ -32,11 +40,50 @@ function writeState(state) {
   fs.renameSync(tmp, STATE_FILE);
 }
 
+// Hook invocations can race (working→done events arrive ~40ms apart, each
+// spawning this script). Serialize read-modify-write with a mkdir lock;
+// steal locks older than 5s in case a hook died holding one.
+const LOCK_DIR = STATE_FILE + ".lock";
+const LOCK_STALE_MS = 5000;
+
+function withLock(fn) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.mkdirSync(LOCK_DIR);
+      try {
+        return fn();
+      } finally {
+        fs.rmdirSync(LOCK_DIR, { recursive: true });
+      }
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      try {
+        const stat = fs.statSync(LOCK_DIR);
+        if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+          fs.rmdirSync(LOCK_DIR, { recursive: true });
+          continue; // retry immediately after stealing the stale lock
+        }
+      } catch (_statErr) {
+        continue; // lock vanished between mkdir and stat
+      }
+      if (attempt > 200) throw new Error("state lock timeout");
+      const waitMs = 5 + Math.floor(Math.random() * 10);
+      const start = Date.now();
+      while (Date.now() - start < waitMs) {
+        // busy-ish wait with jitter to desynchronize racing hooks
+      }
+    }
+  }
+}
+
 function mutateState(mutator) {
-  const state = readState();
-  mutator(state);
-  writeState(state);
-  return state;
+  return withLock(() => {
+    const state = readState();
+    mutator(state);
+    writeState(state);
+    return state;
+  });
 }
 
 // One-shot newline-delimited JSON request over the herdr socket.

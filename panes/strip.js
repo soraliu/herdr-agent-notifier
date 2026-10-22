@@ -35,14 +35,13 @@ function render(state) {
     const marker = i === selected ? "\x1b[7m" : "";
     const reset = i === selected ? "\x1b[27m" : "";
     lines.push(
-      `${marker}${style.icon}\x1b[${style.color}m ${String(i + 1).padStart(2, "s")} ${n.agent || "agent"}\x1b[0m${reset} \x1b[2m${n.pane_id} ${formatTime(n.at)}\x1b[22m`
+      `${marker}${style.icon}\x1b[${style.color}m ${String(i + 1).padStart(2)} ${n.agent || "agent"}\x1b[0m${reset} \x1b[2m${n.pane_id} ${formatTime(n.at)}\x1b[22m`
     );
   });
   process.stdout.write(CLEAR + lines.join("\r\n") + "\r\n");
 }
 
-function focusSelected(items) {
-  const item = items[selected];
+function focusSelected(item) {
   if (!item) return;
   rpc("pane.focus", { pane_id: item.pane_id })
     .then((res) => {
@@ -68,6 +67,16 @@ async function openStrip() {
   }
 }
 
+function jumpTo(items, index) {
+  const item = items[index];
+  if (!item) return;
+  selected = index;
+  focusSelected(item);
+  mutateState((s) => {
+    s.notifications = s.notifications.filter((n) => n.pane_id !== item.pane_id);
+  });
+}
+
 function main() {
   process.stdout.write(HIDE_CURSOR);
   process.on("exit", () => process.stdout.write(SHOW_CURSOR));
@@ -86,19 +95,12 @@ function main() {
     if (/^[1-9]$/.test(buf.toString())) {
       const idx = parseInt(buf.toString(), 10) - 1;
       if (idx < items.length) {
-        selected = idx;
-        focusSelected(items);
-        mutateState((s) => {
-          s.notifications = s.notifications.filter((n) => n !== items[selected]);
-        });
+        jumpTo(items, idx);
       }
     }
-    if (lastRaw === "0d") {
-      // enter
-      focusSelected(items);
-      mutateState((s) => {
-        s.notifications = s.notifications.filter((n) => n !== items[selected]);
-      });
+    if (lastRaw === "0d" || lastRaw === "0a") {
+      // enter (herdr sends CR; some terminals send LF)
+      jumpTo(items, selected);
     }
     if (lastRaw === "64" && items.length) {
       // d
