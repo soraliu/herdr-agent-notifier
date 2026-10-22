@@ -16,6 +16,7 @@ command = ["node", "hooks/on-agent-status.js"]
 
 [[actions]]
 id = "toggle"
+title = "Toggle agent notification list"
 contexts = ["global"]
 command = ["node", "hooks/toggle.js"]
 
