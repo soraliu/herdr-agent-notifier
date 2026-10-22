@@ -1,0 +1,16 @@
+id = "soraliu.agent-notifier"
+name = "Agent Notifier"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Persistent agent done/blocked list that never times out; jump to the pane from the strip"
+platforms = ["linux", "macos"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "hooks/on-agent-status.js"]
+
+[[panes]]
+id = "strip"
+title = "agents"
+placement = "split"
+command = ["node", "panes/strip.js"]
