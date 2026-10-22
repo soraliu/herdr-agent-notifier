@@ -35,3 +35,11 @@ herdr 插件：agent 完成任务（done）或需要输入（blocked）时，在
 - 条目上限 20 个。
 - done 的判定依赖 herdr 的 seen 语义：焦点在目标 pane 的 tab 上时，完成会呈现为
   idle 而非 done，因此不会入列（此时用户正在看，无需提醒）。
+
+## 安装
+
+```bash
+herdr plugin install soraliu/herdr-agent-notifier
+```
+
+nixfiles 已在 herdr 模块 activation 中幂等接入（install-if-missing，判据 `github:soraliu/herdr-agent-notifier` 源已注册）。本地开发：`herdr plugin unlink soraliu.agent-notifier && herdr plugin link ~/Github/herdr-agent-notifier`。
