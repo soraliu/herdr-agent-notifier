@@ -15,11 +15,19 @@ herdr 插件：记录 agent 完成（done）/需要输入（blocked）事件，*
 
 ## 工作方式
 
+
 - `[[events]] on = "pane.agent_status_changed"` — `hooks/on-agent-status.js`：
-  done/blocked 追加到 `~/.local/state/herdr/plugins/soraliu.agent-notifier/notifications.json`，
-  其他状态（working/idle/unknown）移除该 pane 条目（正在干活的 agent 不占列表）
+  **任何完成轮次**（`working → idle/done`，无论用户是否在看该 tab——herdr 对已 seen
+  的 pane 报 `idle` 而非 `done`，两者都是完成）与 `blocked` 入列
+  `~/.local/state/herdr/plugins/soraliu.agent-notifier/notifications.json`。
+  初始 `idle`（agent 启动，之前无 working）不入列。条目只由用户操作
+  （Enter 跳转 / `d` / `D`）清除，**不因后续状态变化自动移除**。
+- `[[events]] on = "pane.exited"` — pane 关闭时移除该 pane 条目与 working 标记。
 - `[[actions]] toggle`（`contexts = ["global"]`）— `hooks/toggle.js`：
   `plugin.pane.open`，遇 `ui_busy`（已有 popup）则 `popup.close` —— 即 toggle 语义
+- **popup 开着时 `option+o`（Alt+o）在 popup 内部处理**：popup 拥有全部键盘输入，
+  herdr 键位不再触发；`panes/strip.js` 收到 `ESC o` 字节后自行 `popup.close`，
+  保证 toggle 双向可用。
 - `[[panes]] strip`（popup, 50% × 12 行）— `panes/strip.js`：500ms 轮询状态文件渲染
 
 ## 列表按键
@@ -27,6 +35,7 @@ herdr 插件：记录 agent 完成（done）/需要输入（blocked）事件，*
 | 键 | 行为 |
 | --- | --- |
 | Enter / 1-9 | 跳转到该 pane，清条目，异步关浮层 |
+| option+o (Alt+o) | 关闭浮层（popup 内部接管，等同 toggle off） |
 | ↑/↓ | 移动选择 |
 | d | 清除当前条目（不跳转） |
 | D | 清空全部 |
