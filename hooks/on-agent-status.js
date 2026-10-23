@@ -48,14 +48,21 @@ function main() {
       return;
     }
     // idle / done / unknown — terminal states.
+    // `done` is itself a completion signal (herdr reports Idle+unseen as done),
+    // so it records regardless of the working set — a missed `working` event
+    // (server restart, state reset mid-run, hook race) must not drop it.
+    // `idle` records only when a working turn was tracked.
     const completedTurn = state.working.includes(paneId);
     state.working = state.working.filter((p) => p !== paneId);
+    if (status === "done") {
+      upsertNotification(state, { paneId, agent, status: "done", workspaceId: data.workspace_id || context.workspace_id || null });
+      return;
+    }
     if (!completedTurn) return; // initial idle / unknown noise — not a notification
     if (status === "unknown") return; // agent died mid-turn; pane.exited handles cleanup
     // Map idle to done for display: a completed turn that herdr reports as
     // idle (because the pane was already seen) is still a completion.
-    const displayStatus = status === "idle" ? "done" : status;
-    upsertNotification(state, { paneId, agent, status: displayStatus, workspaceId: data.workspace_id || context.workspace_id || null });
+    upsertNotification(state, { paneId, agent, status: "done", workspaceId: data.workspace_id || context.workspace_id || null });
   });
 }
 
