@@ -27,8 +27,10 @@ herdr 插件：记录 agent 完成（done）/需要输入（blocked）事件，*
   `plugin.pane.open`，遇 `ui_busy`（已有 popup）则 `popup.close` —— 即 toggle 语义
 - **popup 开着时 `option+o`（Alt+o）在 popup 内部处理**：popup 拥有全部键盘输入，
   herdr 键位不再触发；`panes/strip.js` 收到 `ESC o` 字节后自行 `popup.close`，
-  保证 toggle 双向可用。
-- `[[panes]] strip`（popup, 50% × 12 行）— `panes/strip.js`：500ms 轮询状态文件渲染
+  保证 toggle 双向可用。**打开后 700ms 内的输入被忽略**——触发键自身的字节会被
+  herdr 转发进刚聚焦的 popup，不吞掉它 popup 会在打开 ~1 秒后自杀（表现为
+  「打开后闪一下就没了/看不到条目」）；裸 ESC 按住 80ms 等待后续分块合并
+  （alt+o 可能分两个 chunk 到达）。
 
 ## 列表按键
 
@@ -51,8 +53,7 @@ herdr 插件：记录 agent 完成（done）/需要输入（blocked）事件，*
 - toggle 判定依赖「本插件是唯一 popup 占用者」：Settings/Copy mode 等内建 modal
   打开时 `plugin.pane.open` 返回 `ui_busy`，toggle 会误关它（用户环境无此场景）。
 - 条目上限 20 个。
-- done 的判定依赖 herdr 的 seen 语义：焦点在目标 pane 的 tab 上时，完成会呈现为
-  idle 而非 done，因此不会入列（此时用户正在看，无需提醒）。
+- 打开后 700ms 内的按键会被防抖吞掉（见「工作方式」）；需要立刻关闭时再按一次。
 - 通知本身不弹任何 UI（设计如此）；需要即时提示时依赖 herdr 内置 toast 共存。
 
 ## 安装
