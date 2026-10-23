@@ -72,11 +72,20 @@ function main() {
   // setRawMode is optional: without it we lose keyboard interaction but keep
   // rendering + polling. Crash would kill the pane seconds after open.
   const interactive = typeof process.stdin.setRawMode === "function";
-  let lastRaw = "";
+  // Grace period after open: the alt+o keypress that toggled us open gets
+  // echoed into the popup's stdin (herdr routes the triggering key's bytes to
+  // the newly focused pane). Swallow input arriving in this window or the
+  // popup closes itself ~1s after opening (observed on pane spawn logs).
+  const OPEN_GRACE_MS = 700;
+  const openedAt = Date.now();
+  // Bare ESC needs disambiguation: ESC-prefixed sequences (alt+o = ESC o,
+  // arrow keys = ESC [ A…) can arrive as separate chunks. Hold a lone ESC for
+  // a short window; if a follow-up chunk lands, merge and re-dispatch.
+  const ESC_MERGE_MS = 80;
+  let escHoldTimer = null;
   if (interactive) process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdin.on("data", (buf) => {
-    lastRaw = buf.toString("hex");
+  const handleKey = (lastRaw, text) => {
     const state = readState();
     const items = state.notifications || [];
     if (lastRaw === "03") process.exit(0); // ctrl+c
@@ -88,11 +97,11 @@ function main() {
       rpc("popup.close", {}, 3000).catch(() => {});
       return;
     }
-    if (lastRaw === "71" || lastRaw === "1b") process.exit(0); // q / esc
+    if (lastRaw === "71") process.exit(0); // q
     if (lastRaw === "1b5b41" && items.length) selected = (selected - 1 + items.length) % items.length; // up
     if (lastRaw === "1b5b42" && items.length) selected = (selected + 1) % items.length; // down
-    if (/^[1-9]$/.test(buf.toString())) {
-      const idx = parseInt(buf.toString(), 10) - 1;
+    if (/^[1-9]$/.test(text)) {
+      const idx = parseInt(text, 10) - 1;
       if (idx < items.length) {
         jumpTo(items, idx);
       }
@@ -116,6 +125,23 @@ function main() {
       selected = 0;
     }
     render(readState());
+  };
+  process.stdin.on("data", (buf) => {
+    // Swallow the open-echo window (the triggering key's own bytes).
+    if (Date.now() - openedAt < OPEN_GRACE_MS) return;
+    const hex = buf.toString("hex");
+    if (hex === "1b") {
+      // Bare ESC: hold briefly — a follow-up chunk means this was a prefix.
+      escHoldTimer = setTimeout(() => process.exit(0), ESC_MERGE_MS);
+      return;
+    }
+    if (escHoldTimer) {
+      clearTimeout(escHoldTimer);
+      escHoldTimer = null;
+      handleKey("1b" + hex, "");
+      return;
+    }
+    handleKey(hex, buf.toString());
   });
 
   setInterval(() => {
