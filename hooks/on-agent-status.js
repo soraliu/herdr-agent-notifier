@@ -102,13 +102,14 @@ function upsertNotification(state, { paneId, agent, status, workspaceId }) {
 // snapshot cannot provide (pane already gone, no agent_session yet) are
 // simply left unset — the strip skips missing pieces.
 async function enrichEntry(paneId) {
-  const snap = await rpc("session.snapshot", {}, 4000);
-  const agents = snap && snap.agents;
-  if (!Array.isArray(agents)) return;
+  const response = await rpc("session.snapshot", {}, 4000);
+  // rpc resolves the full response envelope ({id, result}); the snapshot
+  // method nests its payload once more: result.snapshot.{agents,workspaces,…}.
+  const snap = (response && response.result && response.result.snapshot) || {};
+  const agents = snap.agents;
   const agent = agents.find((a) => a.pane_id === paneId);
   const workspaces = Array.isArray(snap.workspaces) ? snap.workspaces : [];
   const tabs = Array.isArray(snap.tabs) ? snap.tabs : [];
-  const panes = Array.isArray(snap.panes) ? snap.panes : [];
   const wsLabel = (id) => {
     const ws = workspaces.find((w) => w.workspace_id === id);
     return ws ? ws.label : null;
