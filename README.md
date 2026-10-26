@@ -5,7 +5,7 @@ herdr 插件：记录 agent 完成（done）/需要输入（blocked）事件，*
 
 替代 herdr 内置 toast 的两个痛点：toast 5 秒自动消失、点击常来不及。
 
-## 交互设计（0.4.0）
+## 交互设计（0.5.0）
 
 - **默认不打开**——事件只写入状态文件，不弹任何东西
 - **`Alt+o` toggle 浮层**（plugin action，`placement="popup"`，等价 zellij float：
