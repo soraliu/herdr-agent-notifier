@@ -96,7 +96,9 @@ function paneWidth() {
 function render(state) {
   const width = paneWidth();
   const lines = [];
-  const items = state.notifications || [];
+  // Newest first: entries are keyed by ISO timestamps, so string comparison
+  // is chronological. Mutations (d/D/Enter) index the same sorted array.
+  const items = [...(state.notifications || [])].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   const title = items.length
     ? `agent-notifier · ${items.length} pending`
     : "agent-notifier";
