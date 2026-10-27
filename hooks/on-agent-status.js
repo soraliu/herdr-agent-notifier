@@ -1,4 +1,4 @@
-// Event hooks: pane.agent_status_changed + pane.exited
+// Event hooks: pane.agent_status_changed + pane.agent_detected + pane.exited
 //
 // Semantics: any completed turn (working -> idle/done) or blocked prompt is a
 // notification, regardless of whether the user was watching that tab (herdr
@@ -7,13 +7,20 @@
 // the popup) or when the pane exits. Initial idle (agent startup, no prior
 // working) is not a notification.
 //
+// pane.agent_detected feeds the "recently agents" tab: it fires whenever a
+// pane gains an agent label (new agent pane, or a different agent taking over
+// the pane) and when the label is released (agent left). We upsert
+// state.recent {pane_id, agent, at}; a re-detection of the same agent (e.g.
+// after a herdr server restart) keeps the original open time, a label change
+// resets it. pane.exited drops the entry.
+//
 // Recorded entries are enriched best-effort: one `session.snapshot` RPC right
 // after the state write fills agent type, cwd, pane title, tab and workspace
 // labels; the agent session jsonl (path from agent_session) is scanned for
 // its name. Every piece is optional — anything unavailable is simply skipped.
 "use strict";
 const fs = require("fs");
-const { mutateState, rpc } = require("./lib");
+const { mutateState, rpc, readSessionName, shortSession } = require("./lib");
 
 // How much of a session jsonl to scan for title records. pi/omp append the
 // name near the head of the file (session start / rename), so a 1 MiB prefix
@@ -34,6 +41,47 @@ function main() {
       state.seq += 1;
       state.working = (state.working || []).filter((p) => p !== paneId);
       state.notifications = state.notifications.filter((n) => n.pane_id !== paneId);
+      state.recent = (state.recent || []).filter((r) => r.pane_id !== paneId);
+    });
+    return;
+  }
+  if (eventName === "pane_agent_detected" || eventName === "pane.agent_detected") {
+    const paneId = data.pane_id;
+    if (!paneId) return;
+    const now = new Date().toISOString();
+    if (data.released) {
+      // agent left the pane — it is no longer an agent pane
+      mutateState((state) => {
+        state.seq += 1;
+        state.recent = (state.recent || []).filter((r) => r.pane_id !== paneId);
+      });
+      return;
+    }
+    const agent = data.agent || null;
+    mutateState((state) => {
+      state.seq += 1;
+      state.recent = state.recent || [];
+      const existing = state.recent.find((r) => r.pane_id === paneId);
+      if (existing) {
+        // same agent re-detected (server restart) keeps its original open
+        // time; a different agent taking over the pane counts as newly opened
+        if (agent && existing.agent !== agent) {
+          existing.agent = agent;
+          existing.at = now;
+        }
+        if (data.workspace_id) existing.workspace_id = data.workspace_id;
+      } else {
+        state.recent.push({
+          pane_id: paneId,
+          agent,
+          workspace_id: data.workspace_id || null,
+          at: now,
+        });
+      }
+      if (state.recent.length > 100) {
+        state.recent.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+        state.recent.length = 100;
+      }
     });
     return;
   }
@@ -157,45 +205,5 @@ async function enrichEntry(paneId) {
   });
 }
 
-// Scan the head of a pi/omp session jsonl for the last non-empty title record
-// (the session's auto or user-given name). Best-effort: unreadable or unnamed
-// sessions yield null and the strip falls back to the pane title.
-function readSessionName(jsonPath) {
-  try {
-    const fd = fs.openSync(jsonPath, "r");
-    try {
-      const buf = Buffer.alloc(SESSION_NAME_READ_BYTES);
-      const { bytesRead } = fs.readSync(fd, buf, 0, buf.length, 0);
-      const text = buf.toString("utf8", 0, bytesRead);
-      let name = null;
-      for (const line of text.split("\n")) {
-        if (!line.startsWith('{"type":"title"') && !line.includes('"type": "title"')) continue;
-        try {
-          const record = JSON.parse(line);
-          if (typeof record.title === "string" && record.title.trim()) name = record.title.trim();
-        } catch (_err) {
-          // torn first line of a concurrent write — ignore
-        }
-      }
-      return name;
-    } finally {
-      fs.closeSync(fd);
-    }
-  } catch (_err) {
-    return null;
-  }
-}
-
-// `…/<dir>/2026-10-23T09-00-16-352Z_01a167fd-4e60-….jsonl` → `01a167fd`;
-// raw session ids pass through trimmed to 8 chars.
-function shortSession(value) {
-  const base = String(value).split("/").pop() || String(value);
-  const stem = base.replace(/\.jsonl?$/, "");
-  const underscore = stem.split("_");
-  if (underscore.length >= 2 && /^[0-9a-f]{8}/i.test(underscore[1])) {
-    return underscore[1].slice(0, 8);
-  }
-  return stem.length > 8 ? stem.slice(0, 8) : stem;
-}
 
 main();

@@ -18,15 +18,16 @@ const STATE_FILE = path.join(STATE_DIR, "notifications.json");
 const MAX_NOTIFICATIONS = 20;
 
 function emptyState() {
-  return { strip_pane_id: null, seq: 0, notifications: [], working: [] };
+  return { strip_pane_id: null, seq: 0, notifications: [], working: [], recent: [] };
 }
 
 function readState() {
   try {
     const parsed = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     if (parsed && Array.isArray(parsed.notifications)) {
-      // migrate older states that predate the working set
+      // migrate older states that predate the working/recent sets
       if (!Array.isArray(parsed.working)) parsed.working = [];
+      if (!Array.isArray(parsed.recent)) parsed.recent = [];
       return parsed;
     }
   } catch (_err) {
@@ -169,6 +170,52 @@ async function withLockAsync(fn) {
   }
 }
 
+// How much of a session jsonl to scan for title records. pi/omp append the
+// name near the head of the file, so a 512 KiB prefix is plenty and keeps
+// reads fast even for huge sessions.
+const SESSION_NAME_READ_BYTES = 512 * 1024;
+
+// Scan the head of a pi/omp session jsonl for the last non-empty title record
+// (the session's auto or user-given name). Best-effort: unreadable or unnamed
+// sessions yield null and callers fall back to the pane title.
+function readSessionName(jsonPath) {
+  try {
+    const fd = fs.openSync(jsonPath, "r");
+    try {
+      const buf = Buffer.alloc(SESSION_NAME_READ_BYTES);
+      const { bytesRead } = fs.readSync(fd, buf, 0, buf.length, 0);
+      const text = buf.toString("utf8", 0, bytesRead);
+      let name = null;
+      for (const line of text.split("\n")) {
+        if (!line.startsWith('{"type":"title"') && !line.includes('"type": "title"')) continue;
+        try {
+          const record = JSON.parse(line);
+          if (typeof record.title === "string" && record.title.trim()) name = record.title.trim();
+        } catch (_err) {
+          // torn first line of a concurrent write — ignore
+        }
+      }
+      return name;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (_err) {
+    return null;
+  }
+}
+
+// `…/<dir>/2026-10-23T09-00-16-352Z_01a167fd-4e60-….jsonl` → `01a167fd`;
+// raw session ids pass through trimmed to 8 chars.
+function shortSession(value) {
+  const base = String(value).split("/").pop() || String(value);
+  const stem = base.replace(/\.jsonl?$/, "");
+  const underscore = stem.split("_");
+  if (underscore.length >= 2 && /^[0-9a-f]{8}/i.test(underscore[1])) {
+    return underscore[1].slice(0, 8);
+  }
+  return stem.length > 8 ? stem.slice(0, 8) : stem;
+}
+
 module.exports = {
   STATE_DIR,
   STATE_FILE,
@@ -178,4 +225,6 @@ module.exports = {
   rpc,
   findPaneId,
   withLockAsync,
+  readSessionName,
+  shortSession,
 };
