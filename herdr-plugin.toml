@@ -1,8 +1,8 @@
 id = "soraliu.agent-notifier"
 name = "Agent Notifier"
-version = "0.6.0"
+version = "0.6.1"
 min_herdr_version = "0.9.0"
-description = "Agent list with two tabs: recently opened agent panes (jump back to any of them) plus done/blocked notifications; option+o toggles the floating popup"
+description = "Agent list with two tabs: recently visited agent panes (jump back to any of them) plus done/blocked notifications; option+o toggles the floating popup"
 platforms = ["linux", "macos"]
 
 [[events]]
@@ -11,6 +11,10 @@ command = ["node", "hooks/on-agent-status.js"]
 
 [[events]]
 on = "pane.agent_detected"
+command = ["node", "hooks/on-agent-status.js"]
+
+[[events]]
+on = "pane.focused"
 command = ["node", "hooks/on-agent-status.js"]
 
 [[events]]
@@ -28,5 +32,5 @@ id = "strip"
 title = "agents"
 placement = "popup"
 width = "60%"
-height = 20
+height = 50
 command = ["node", "panes/strip.js"]

@@ -7,12 +7,17 @@
 // the popup) or when the pane exits. Initial idle (agent startup, no prior
 // working) is not a notification.
 //
-// pane.agent_detected feeds the "recently agents" tab: it fires whenever a
-// pane gains an agent label (new agent pane, or a different agent taking over
-// the pane) and when the label is released (agent left). We upsert
-// state.recent {pane_id, agent, at}; a re-detection of the same agent (e.g.
-// after a herdr server restart) keeps the original open time, a label change
-// resets it. pane.exited drops the entry.
+// pane.focused maintains the LRU order of the "recently agents" tab: every
+// time the user focuses an agent pane, its recent entry's `at` becomes now
+// (last-visit time) and it is recorded as the current agent pane, which the
+// strip excludes from the list (you are already there).
+//
+// pane.agent_detected feeds the same list: it fires whenever a pane gains an
+// agent label (new agent pane, or a different agent taking over the pane) and
+// when the label is released (agent left). We upsert state.recent
+// {pane_id, agent, at}; a re-detection of the same agent (e.g. after a herdr
+// server restart) keeps the entry's time, a label change resets it.
+// pane.exited drops the entry.
 //
 // Recorded entries are enriched best-effort: one `session.snapshot` RPC right
 // after the state write fills agent type, cwd, pane title, tab and workspace
@@ -34,6 +39,23 @@ function main() {
   const eventName = envelope.event || (envelope.data && envelope.data.type) || "";
   const data = envelope.data || {};
 
+  if (eventName === "pane_focused" || eventName === "pane.focused") {
+    const paneId = data.pane_id;
+    if (!paneId) return;
+    // The invocation context tells us whether the newly focused pane is an
+    // agent pane (focused_pane_agent); plain shell panes skip straight out.
+    const context = JSON.parse(process.env.HERDR_PLUGIN_CONTEXT_JSON || "{}");
+    if (!context.focused_pane_agent) return;
+    const now = new Date().toISOString();
+    mutateState((state) => {
+      const entry = (state.recent || []).find((r) => r.pane_id === paneId);
+      if (!entry) return; // not a tracked agent pane (detection race) — skip
+      entry.at = now;
+      state.last_agent_focus = paneId;
+      state.seq += 1;
+    });
+    return;
+  }
   if (eventName === "pane_agent_exited" || eventName === "pane.exited") {
     const paneId = data.pane_id;
     if (!paneId) return;
@@ -42,6 +64,7 @@ function main() {
       state.working = (state.working || []).filter((p) => p !== paneId);
       state.notifications = state.notifications.filter((n) => n.pane_id !== paneId);
       state.recent = (state.recent || []).filter((r) => r.pane_id !== paneId);
+      if (state.last_agent_focus === paneId) state.last_agent_focus = null;
     });
     return;
   }

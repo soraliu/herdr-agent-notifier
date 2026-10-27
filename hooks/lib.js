@@ -18,7 +18,7 @@ const STATE_FILE = path.join(STATE_DIR, "notifications.json");
 const MAX_NOTIFICATIONS = 20;
 
 function emptyState() {
-  return { strip_pane_id: null, seq: 0, notifications: [], working: [], recent: [] };
+  return { strip_pane_id: null, seq: 0, notifications: [], working: [], recent: [], last_agent_focus: null };
 }
 
 function readState() {
@@ -28,6 +28,7 @@ function readState() {
       // migrate older states that predate the working/recent sets
       if (!Array.isArray(parsed.working)) parsed.working = [];
       if (!Array.isArray(parsed.recent)) parsed.recent = [];
+      if (typeof parsed.last_agent_focus !== "string") parsed.last_agent_focus = null;
       return parsed;
     }
   } catch (_err) {

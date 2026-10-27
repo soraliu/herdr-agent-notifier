@@ -1,10 +1,11 @@
 "use strict";
 // Floating popup with two tabs (toggled with option+o, plugin action "toggle"):
 //
-//   recently agents (default) — every live agent pane, newest-opened first
-//     (open time = pane.agent_detected time recorded in state.recent).
-//     Enter/1-9 jump to the pane; entries are a list, not a todo — jumping
-//     never removes them.
+//   recently agents (default) — the agent panes you visited, most recently
+//     visited first (LRU; `at` is bumped by the pane.focused hook, seeded by
+//     pane.agent_detected). The pane you are currently in is excluded, at
+//     most MAX_RECENT entries are shown. Enter/1-9/0 jump to the pane;
+//     entries are a list, not a todo — jumping never removes them.
 //   notifications — agents waiting for you (done/blocked), newest first.
 //     Enter/1-9 jump and clear the entry, d dismisses one, D clears all.
 //
@@ -41,6 +42,9 @@ const STYLE = {
 let activeTab = "recent"; // default tab per spec
 const sel = { recent: 0, notif: 0 };
 const scroll = { recent: 0, notif: 0 };
+// The recently tab shows at most MAX_RECENT entries (two lines each): with
+// header, overflow line and hint the strip stays inside a 24-row fallback.
+const MAX_RECENT = 10;
 
 // Live session data, refreshed from session.snapshot every LIVE_POLL_MS.
 // Kept between polls so rendering never blocks on the socket.
@@ -161,13 +165,24 @@ function buildRecentEntry(rec) {
 }
 
 function recentEntries(state) {
-  // Newest-opened first: at is an ISO timestamp, so string comparison is
-  // chronological. Mutations (jump keys) index the same sorted array.
+  // LRU order: `at` is the pane's last-visit time (bumped by the
+  // pane.focused hook on every visit, seeded by agent_detected), so string
+  // comparison over ISO timestamps is "most recently visited first".
+  // Mutations (jump keys) index the same sorted array.
   const recs = [...(state.recent || [])].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  // The pane the user is currently in is not a jump target: exclude both
+  // the hook-maintained last_agent_focus and any pane the live snapshot
+  // marks as focused (covers agents launched into the current pane before
+  // any focus event fired).
+  const current = state.last_agent_focus || null;
   const out = [];
   for (const rec of recs) {
+    if (rec.pane_id === current) continue;
+    const liveAgent = live.agents.find((x) => x.pane_id === rec.pane_id);
+    if (liveAgent && liveAgent.focused) continue;
     const entry = buildRecentEntry(rec);
     if (entry) out.push(entry);
+    if (out.length >= MAX_RECENT) break;
   }
   return out;
 }
@@ -365,8 +380,9 @@ function main() {
     }
     if (lastRaw === "1b5b41" && items.length) sel[activeTab] = (sel[activeTab] - 1 + items.length) % items.length; // up
     if (lastRaw === "1b5b42" && items.length) sel[activeTab] = (sel[activeTab] + 1) % items.length; // down
-    if (/^[1-9]$/.test(text)) {
-      const idx = parseInt(text, 10) - 1;
+    if (/^[0-9]$/.test(text)) {
+      // 1-9 select entries 1-9; 0 selects the tenth.
+      const idx = text === "0" ? 9 : parseInt(text, 10) - 1;
       if (idx < items.length) {
         jumpTo(items, idx, { clearEntry: activeTab === "notif" });
       }
